@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>업무연락처</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #f4f6f8; color: #1f2937; font-family: Arial, "Malgun Gothic", sans-serif; }
+    .contacts-app { width: min(900px, calc(100% - 32px)); margin: 48px auto; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 0 0 18px; font-size: 20px; }
+    .guide { margin: 0 0 24px; color: #64748b; }
+    .card { padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; box-shadow: 0 4px 12px rgb(15 23 42 / 6%); }
+    .add-card, .search-card { margin-bottom: 24px; }
+    label { display: block; margin: 0 0 8px; font-weight: 700; }
+    input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; color: inherit; font: inherit; }
+    input:focus { border-color: #2563eb; outline: 3px solid rgb(37 99 235 / 15%); }
+    .form-grid, .search-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .search-grid { grid-template-columns: repeat(2, 1fr); }
+    button { cursor: pointer; margin-top: 18px; padding: 11px 16px; border: 0; border-radius: 8px; background: #2563eb; color: #ffffff; font: inherit; font-weight: 700; }
+    button:hover { background: #1d4ed8; }
+    .status-message, .search-result { min-height: 22px; margin: 14px 0 0; color: #047857; }
+    .status-message.error { color: #b91c1c; }
+    .search-result { color: #64748b; font-size: 13px; }
+    .contact-list { display: grid; gap: 12px; }
+    .contact-item { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 16px; align-items: center; }
+    .contact-name { margin: 0; font-size: 17px; font-weight: 700; }
+    .contact-department, .contact-phone { margin: 0; color: #64748b; }
+    .contact-phone { text-align: right; }
+    .contact-actions {
+      display: inline-flex;
+      overflow: hidden;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      background: #f8fafc;
+      box-shadow: 0 2px 5px rgb(15 23 42 / 8%);
+    }
+    .contact-actions button {
+      margin-top: 0;
+      padding: 8px 11px;
+      border-radius: 0;
+      background: transparent;
+      color: #334155;
+      font-size: 13px;
+    }
+    .contact-actions button + button { border-left: 1px solid #cbd5e1; }
+    .contact-actions button:hover { transform: none; }
+    .contact-item input { margin: 0; }
+    .edit-button { color: #2563eb !important; }
+    .edit-button:hover { background: #eff6ff !important; }
+    .delete-button { color: #dc2626 !important; }
+    .delete-button:hover { background: #fef2f2 !important; }
+    .save-edit-button { color: #047857 !important; }
+    .save-edit-button:hover { background: #ecfdf5 !important; }
+    .empty-message { margin: 0; color: #64748b; }
+    @media (max-width: 600px) {
+      .contacts-app { width: min(100% - 24px, 900px); margin: 24px auto; }
+      .card { padding: 18px; }
+      .form-grid, .search-grid, .contact-item { grid-template-columns: 1fr; gap: 12px; }
+      .contact-phone { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <main class="contacts-app">
+    <h1>업무연락처</h1>
+    <p class="guide">자주 찾는 업무 연락처를 등록하고 빠르게 검색하세요.</p>
+
+    <section class="card add-card" aria-label="연락처 추가">
+      <h2>연락처 추가</h2>
+      <form id="contactForm">
+        <div class="form-grid">
+          <div>
+            <label for="contactName">이름</label>
+            <input id="contactName" type="text" maxlength="50" required placeholder="예: [이름]" />
+          </div>
+          <div>
+            <label for="department">부서</label>
+            <input id="department" type="text" maxlength="100" required placeholder="예: [부서]" />
+          </div>
+          <div>
+            <label for="phoneNumber">전화번호</label>
+            <input id="phoneNumber" type="tel" inputmode="numeric" maxlength="13" required placeholder="예: 010-1234-5678" />
+          </div>
+        </div>
+      <button id="saveButton" type="submit">연락처 저장</button>
+        <p id="statusMessage" class="status-message" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="card search-card" aria-label="연락처 검색">
+      <h2>연락처 목록</h2>
+      <div class="search-grid">
+        <div>
+          <label for="nameSearch">이름 검색</label>
+          <input id="nameSearch" type="search" placeholder="이름으로 검색하세요." />
+        </div>
+        <div>
+          <label for="departmentSearch">부서 검색</label>
+          <input id="departmentSearch" type="search" placeholder="부서로 검색하세요." />
+        </div>
+      </div>
+      <p id="searchResult" class="search-result" aria-live="polite"></p>
+    </section>
+
+    <section aria-label="저장된 연락처">
+      <div id="contactList" class="contact-list"></div>
+    </section>
+  </main>
+
+  <script>
+    const DATABASE_NAME = "businessContactsDatabase";
+    const STORE_NAME = "contacts";
+
+    const contactForm = document.querySelector("#contactForm");
+    const contactName = document.querySelector("#contactName");
+    const department = document.querySelector("#department");
+    const phoneNumber = document.querySelector("#phoneNumber");
+    const nameSearch = document.querySelector("#nameSearch");
+    const departmentSearch = document.querySelector("#departmentSearch");
+    const statusMessage = document.querySelector("#statusMessage");
+    const searchResult = document.querySelector("#searchResult");
+    const contactList = document.querySelector("#contactList");
+    let database;
+
+    function showMessage(message, isError = false) {
+      statusMessage.textContent = message;
+      statusMessage.classList.toggle("error", isError);
+    }
+
+    function openDatabase() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DATABASE_NAME, 1);
+        request.onupgradeneeded = () => {
+          database = request.result;
+          if (!database.objectStoreNames.contains(STORE_NAME)) {
+            database.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+          }
+        };
+        request.onsuccess = () => { database = request.result; resolve(); };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function saveContact(contact) {
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction(STORE_NAME, "readwrite");
+        transaction.objectStore(STORE_NAME).add(contact);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+    }
+
+    function getAllContacts() {
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction(STORE_NAME, "readonly");
+        const request = transaction.objectStore(STORE_NAME).getAll();
+        request.onsuccess = () => resolve(request.result.sort((a, b) => a.name.localeCompare(b.name, "ko")));
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function updateContact(contact) {
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction(STORE_NAME, "readwrite");
+        transaction.objectStore(STORE_NAME).put(contact);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+    }
+
+    function deleteContact(id) {
+      return new Promise((resolve, reject) => {
+        const transaction = database.transaction(STORE_NAME, "readwrite");
+        transaction.objectStore(STORE_NAME).delete(id);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+    }
+
+    function formatPhoneNumber(value) {
+      const numbers = value.replace(/\D/g, "").slice(0, 11);
+      if (numbers.startsWith("02")) {
+        if (numbers.length <= 2) return numbers;
+        if (numbers.length <= 6) return `${numbers.slice(0, 2)}-${numbers.slice(2)}`;
+        return `${numbers.slice(0, 2)}-${numbers.slice(2, numbers.length - 4)}-${numbers.slice(-4)}`;
+      }
+      if (numbers.length <= 3) return numbers;
+      if (numbers.length <= 7) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`;
+      return `${numbers.slice(0, 3)}-${numbers.slice(3, numbers.length - 4)}-${numbers.slice(-4)}`;
+    }
+
+    async function renderContacts() {
+      const contacts = await getAllContacts();
+      const nameKeyword = nameSearch.value.trim().toLowerCase();
+      const departmentKeyword = departmentSearch.value.trim().toLowerCase();
+      const filteredContacts = contacts.filter((contact) => (
+        contact.name.toLowerCase().includes(nameKeyword)
+        && contact.department.toLowerCase().includes(departmentKeyword)
+      ));
+      contactList.replaceChildren();
+      searchResult.textContent = nameKeyword || departmentKeyword ? `검색된 연락처 ${filteredContacts.length}명` : "";
+
+      if (filteredContacts.length === 0) {
+        const emptyMessage = document.createElement("p");
+        emptyMessage.className = "empty-message";
+        emptyMessage.textContent = nameKeyword || departmentKeyword ? "검색된 연락처가 없습니다." : "저장된 연락처가 없습니다.";
+        contactList.append(emptyMessage);
+        return;
+      }
+
+      filteredContacts.forEach((contact) => {
+        const contactItem = document.createElement("article");
+        contactItem.className = "card contact-item";
+        const name = document.createElement("p");
+        name.className = "contact-name";
+        name.textContent = contact.name;
+        const contactDepartment = document.createElement("p");
+        contactDepartment.className = "contact-department";
+        contactDepartment.textContent = contact.department;
+        const phone = document.createElement("p");
+        phone.className = "contact-phone";
+        phone.textContent = contact.phoneNumber;
+        const actions = document.createElement("div");
+        actions.className = "contact-actions";
+        const editButton = document.createElement("button");
+        editButton.className = "edit-button";
+        editButton.type = "button";
+        editButton.textContent = "✎ 수정";
+        editButton.addEventListener("click", () => {
+          const nameInput = document.createElement("input");
+          nameInput.type = "text";
+          nameInput.value = contact.name;
+          nameInput.setAttribute("aria-label", "이름 수정");
+          const departmentInput = document.createElement("input");
+          departmentInput.type = "text";
+          departmentInput.value = contact.department;
+          departmentInput.setAttribute("aria-label", "부서 수정");
+          const phoneInput = document.createElement("input");
+          phoneInput.type = "tel";
+          phoneInput.inputMode = "numeric";
+          phoneInput.value = contact.phoneNumber;
+          phoneInput.setAttribute("aria-label", "전화번호 수정");
+          phoneInput.addEventListener("input", () => {
+            phoneInput.value = formatPhoneNumber(phoneInput.value);
+          });
+
+          const saveEditButton = document.createElement("button");
+          saveEditButton.type = "button";
+          saveEditButton.className = "save-edit-button";
+          saveEditButton.textContent = "✓ 저장";
+          saveEditButton.addEventListener("click", async () => {
+            const nameValue = nameInput.value.trim();
+            const departmentValue = departmentInput.value.trim();
+            const phoneValue = phoneInput.value.trim();
+            if (!nameValue || !departmentValue || !phoneValue) {
+              showMessage("이름, 부서, 전화번호를 모두 입력해 주세요.", true);
+              return;
+            }
+            try {
+              await updateContact({
+                ...contact,
+                name: nameValue,
+                department: departmentValue,
+                phoneNumber: phoneValue,
+                updatedAt: new Date().toISOString()
+              });
+              await renderContacts();
+              showMessage("연락처를 수정했습니다.");
+            } catch (error) {
+              showMessage("연락처를 수정하지 못했습니다.", true);
+              console.error(error);
+            }
+          });
+          const cancelEditButton = document.createElement("button");
+          cancelEditButton.className = "edit-button";
+          cancelEditButton.type = "button";
+          cancelEditButton.textContent = "↩ 취소";
+          cancelEditButton.addEventListener("click", () => renderContacts());
+          actions.replaceChildren(saveEditButton, cancelEditButton);
+          contactItem.replaceChildren(nameInput, departmentInput, phoneInput, actions);
+        });
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "delete-button";
+        deleteButton.type = "button";
+        deleteButton.textContent = "⌫ 삭제";
+        deleteButton.addEventListener("click", async () => {
+          if (!window.confirm(`${contact.name} 연락처를 삭제할까요?`)) return;
+          try {
+            await deleteContact(contact.id);
+            await renderContacts();
+            showMessage("연락처를 삭제했습니다.");
+          } catch (error) {
+            showMessage("연락처를 삭제하지 못했습니다.", true);
+            console.error(error);
+          }
+        });
+        actions.append(editButton, deleteButton);
+        contactItem.append(name, contactDepartment, phone, actions);
+        contactList.append(contactItem);
+      });
+    }
+
+    phoneNumber.addEventListener("input", () => {
+      phoneNumber.value = formatPhoneNumber(phoneNumber.value);
+    });
+
+    contactForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const contactData = {
+          name: contactName.value.trim(),
+          department: department.value.trim(),
+          phoneNumber: phoneNumber.value
+        };
+        await saveContact({ ...contactData, savedAt: new Date().toISOString() });
+        showMessage("연락처를 저장했습니다.");
+        contactForm.reset();
+        await renderContacts();
+        contactName.focus();
+      } catch (error) {
+        showMessage("연락처를 저장하지 못했습니다.", true);
+        console.error(error);
+      }
+    });
+
+    nameSearch.addEventListener("input", () => { renderContacts(); });
+    departmentSearch.addEventListener("input", () => { renderContacts(); });
+
+    async function startContactsPage() {
+      try {
+        if (window.location.protocol === "file:") {
+          showMessage("로컬 서버 주소로 실행해 주세요.", true);
+          return;
+        }
+        await openDatabase();
+        await renderContacts();
+      } catch (error) {
+        showMessage("브라우저 저장 공간을 사용할 수 없습니다.", true);
+        console.error(error);
+      }
+    }
+
+    startContactsPage();
+  </script>
+</body>
+</html>
